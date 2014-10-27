@@ -14,10 +14,10 @@ This is what we could extract from independent sources:
 I created the script *Next Top Analyst.py* to analyse and combine the 3 clues.
 
 I plotted the probability from each clue onto Google Maps, so we can visualise each clue.
-I then plotted the combined probabilities onto Google Maps, and in a heat map, so we can see the location and probability of finding the next top analyst respectively.
+I then plotted the combined probabilities onto Google Maps, and in a Heat Map, so we can see the location and probability of finding the next top analyst respectively.
 
-The heatmap shows us a concentrated location where there is a 0.000000000001 chance of them being in this localised area.
-The google map plot tells us the area is around Heizkraftwerk Klingenberg.  This is a thermal power plant in Berlin - it could be worth a visit to find the next top analyst!
+The Heat Map shows us a concentrated location where there is a 0.000000000001 chance of them being in this localised area.
+The Google Map plot tells us the area is around Heizkraftwerk Klingenberg.  This is a thermal power plant in Berlin - it could be worth a visit to find the next top analyst!
 
 There is a larger area where there is at least a 0.0000000000004 chance of them being in the area.
 This area includes Friedrichshain.  Wikipedia tells me this is an area known for it's fashionable bars and clubs, so having a fun night out could be a good way to find the next top analyst.  It appears to attract students, so maybe this analyst is a student, in which case advertising at their place of study could be a good tactic.
