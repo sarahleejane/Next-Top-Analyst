@@ -11,6 +11,8 @@ This is what we could extract from independent sources:
 * A satellite offers further information: with 95% probability she is located within 2400 m distance of the satellite’s path (assuming a normal probability distribution)
 
 ##Solution to the problem
+I created the script *Next Top Analyst.py* to analyse and combine the 3 clues.
+
 I plotted the probability from each clue onto Google Maps, so we can visualise each clue.
 I then plotted the combined probabilities onto Google Maps, and in a heat map, so we can see the location and probability of finding the next top analyst respectively.
 
