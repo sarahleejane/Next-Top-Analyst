@@ -1,41 +1,53 @@
 import sys
 import matplotlib.pyplot as pyplot
 import matplotlib.mlab as mlab
+import matplotlib as mpl
+import matplotlib.cm as cm
 import numpy as np
 import math
 from itertools import product
 from shapely.geometry import LineString, Point
 from scipy import stats
+import pygmaps 
+import webbrowser 
+import colorsys
 
-#Plots a map showing where next top analyst could be found
+#Plots a heatmap & google map showing where next top analyst could be found
 #Rules dictate it is likely to be close to the river Spree, close to the Brandenburg Gate, and close to the satellite path
 
-def viewProbHeatMaps(latAxisStart, latAxisStop, latAxisInterval, lonAxisStart, lonAxisStop, lonAxisInterval):
+def viewProbHeatMaps(lonAxisStart, lonAxisStop, lonAxisInterval, latAxisStart, latAxisStop, latAxisInterval):
 	#create grid of map points
-	mapPoints = getAllPoints(latAxisStart, latAxisStop, latAxisInterval, lonAxisStart, lonAxisStop, lonAxisInterval)
+	mapPoints = getAllPoints(lonAxisStart, lonAxisStop, lonAxisInterval, latAxisStart, latAxisStop, latAxisInterval)
 
 	#for each grid point - get probability analyst is at this location
 	#caculate probability according to river rule
-	probFromRiver = riverRule(mapPoints, 0, 2730/2)
+	probFromRiver = riverRule(mapPoints, 0, 2730/2, 6371)
 
 	#calculate probability according to Barangenburg Gate rule
-	probFromGate = gateRule(mapPoints, 4700, 3877, 52.516288, 13.377689)
+	probFromGate = gateRule(mapPoints, 4700, 3877, 13.377689, 52.516288, 6371)
 
 	#calculate probability according to satellite rule
-	probFromSatellite = satelliteRule(mapPoints, 52.590117, 13.39915, 52.437385, 13.553989, 6371, 2400/2, 0)
-
-	#plot heatmap of each probability
-	#plotHeatMap(probFromRiver, mapPoints)
-	plotHeatMap(probFromGate, mapPoints)
-	#plotHeatMap(probFromSatellite, mapPoints)
+	probFromSatellite = satelliteRule(mapPoints, 13.39915, 52.590117, 13.553989, 52.437385, 6371, 2400/2, 0)
 
 	#compile all probabilities
-	probTotal = compileProbs(probFromRiver, probFromGate)
+	probTotal = compileProbs(probFromRiver, probFromGate, probFromSatellite)
 
-	#plot heatmap of all probabilities
-	#plotHeatMap(probTotal, mapPoints)
+	#plot total heatmap on map - to see where analyst is likely to be found
+	plotOnMap(lonAxisStart, lonAxisStop, latAxisStart, latAxisStop, probFromRiver, mapPoints, 0, 0.0003)
+	plotOnMap(lonAxisStart, lonAxisStop, latAxisStart, latAxisStop, probFromGate, mapPoints, 0, 0.0003)
+	plotOnMap(lonAxisStart, lonAxisStop, latAxisStart, latAxisStop, probFromSatellite, mapPoints, 0, 0.0003)
 
-def getAllPoints(latStart, latStop, latInterval, lonStart, lonStop, lonInterval):
+	plotOnMap(lonAxisStart, lonAxisStop, latAxisStart, latAxisStop, probTotal, mapPoints, 0, 0.000000000001)
+
+	#plot heatmap of all probabilities - to see what probability each latitude & longitude has
+	plotHeatMap(probTotal, mapPoints)
+
+	#plot heatmap of each probability - not using this for now, but useful code for further analysis
+	#plotHeatMap(probFromRiver, mapPoints)
+	#plotHeatMap(probFromGate, mapPoints)
+	#plotHeatMap(probFromSatellite, mapPoints)
+
+def getAllPoints(lonStart, lonStop, lonInterval, latStart, latStop, latInterval):
 	mapPointsLon = np.linspace(lonStart, lonStop, num=lonInterval)
 	mapPointsLat = np.linspace(latStart, latStop, num=latInterval)
 	mapPointsLonAll, mapPointsLatAll = np.meshgrid(mapPointsLon, mapPointsLat) 
@@ -45,7 +57,7 @@ def getAllPoints(latStart, latStop, latInterval, lonStart, lonStop, lonInterval)
 			allPoints.append([mapPointsLonAll[i][j],mapPointsLatAll[i][j]])
 	return allPoints
 
-def riverRule(allPoints, mu, sigma):
+def riverRule(allPoints, mu, sigma, earthR):
 	#get river coordinates
 	riverCoords = getRiverCoords()
 
@@ -55,7 +67,7 @@ def riverRule(allPoints, mu, sigma):
 		iLon, iLat = getLonLat(coords)
 
 		#find shortest distance from river
-		shortestDis = getShortestDisLinePoint(iLat, iLon, riverCoords)
+		shortestDis = getShortestDisLinePoint(iLon, iLat, riverCoords, earthR)
 
 		#for distance from river, get prob of analyst existence
 		probRiver = mlab.normpdf(shortestDis,mu,sigma)
@@ -76,19 +88,20 @@ def getLonLat(coordPair):
 	lat = coordPair[1]
 	return lon, lat
 
-#SARAH something is up with this distance, play with it
-def getShortestDisLinePoint(pointLat, pointLon, lineCoords):
-	#et shortest distance between point and line
+def getShortestDisLinePoint(pointLon, pointLat, lineCoords, earthR):
+	#get shortest distance between point and line
 	line = LineString(lineCoords) 
 	point = Point(pointLon, pointLat)
-	distance = point.distance(line)
+	closestCoord = line.interpolate(line.project(point))
+	distance = haversine(pointLon, pointLat, closestCoord.x, closestCoord.y, earthR)
 	return distance
 
-def gateRule(allPoints, mu, mode, fixedPointLat, fixedPointLon):
+def gateRule(allPoints, mu, mode, fixedPointLon, fixedPointLat, earthR):
 	#find sd using mode(X)=exp(mu-var)
 	var = mu-math.log(mode)
 	sigma = math.sqrt(var)
 
+	#I have spent some time trying to get lognorm function to work, this calc of mu & sigma feels wrong - I'm a bit stuck
 	muLog = np.log(mu)
 	sigmaLog = np.log(sigma)
 	
@@ -98,7 +111,7 @@ def gateRule(allPoints, mu, mode, fixedPointLat, fixedPointLon):
 		iLon, iLat = getLonLat(coords)
 
 		#find shortest distance from gate
-		shortestDis = getShortestDisPointPoint(iLat, iLon, fixedPointLat, fixedPointLon)
+		shortestDis = haversine(iLon, iLat, fixedPointLon, fixedPointLat, earthR)
 
 		#for distance from gate, get prob of analyst existence
 		if shortestDis > 0:
@@ -107,25 +120,36 @@ def gateRule(allPoints, mu, mode, fixedPointLat, fixedPointLon):
 			probGate = 0
 
 		probGates.append(probGate)
-	print stats.lognorm.pdf(0, sigmaLog, 0, np.exp(muLog))
-	print stats.lognorm.pdf(0.001, sigmaLog, 0, np.exp(muLog))
 	return probGates
 
-def getShortestDisPointPoint(pointLat1, pointLon1, pointLat2, pointLon2): 
-	point1 = Point(pointLat1, pointLon1) 
-	point2 = Point(pointLat2, pointLon2)
-	distance = point1.distance(point2)
-	return distance
+def haversine(lon1, lat1, lon2, lat2, earthR):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
 
-def lognstat(mu, var):
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a)) 
+
+    metres = earthR * c * 1000
+
+    return metres 
+
+def lognstat(mu, sigma):
+	#perhaps I should be using this to get lognorm mu & sigma, but then lognorm function doesn't work
     """Calculate the mean of and variance of the lognormal distribution given
     the mean (`mu`) and standard deviation (`sigma`), of the associated normal 
     distribution."""
-    m = np.exp(mu + (var / 2.0))
-    v = np.exp(2 * (mu + var)) * (np.exp(var)-1)
+    m = np.exp(mu + sigma**2 / 2.0)
+    v = np.exp(2 * mu + sigma**2) * (np.exp(sigma**2) - 1)
     return m, v
 
-def satelliteRule(allPoints, latStart, lonStart, latEnd, lonEnd, earthR, sigma, mu):
+def satelliteRule(allPoints, lonStart, latStart, lonEnd, latEnd, earthR, sigma, mu):
 	#get satellite path coordinates
 	pathCoords = ([lonStart, latStart], [lonEnd, latEnd])
 
@@ -135,18 +159,17 @@ def satelliteRule(allPoints, latStart, lonStart, latEnd, lonEnd, earthR, sigma, 
 		iLon, iLat = getLonLat(coords)
 
 		#find shortest distance from river
-		shortestDis = getShortestDisLinePoint(iLat, iLon, pathCoords)
+		shortestDis = getShortestDisLinePoint(iLon, iLat, pathCoords, earthR)
 
 		#for distance from river, get prob of analyst existence
 		probPath = mlab.normpdf(shortestDis,mu,sigma)
 		probPaths.append(probPath)
 	return probPaths
 
-
-def compileProbs(probs1, probs2):
+def compileProbs(probs1, probs2, probs3):
 	totalProbs = []
 	for i in range(0, len(probs1)):
-		totalProb = probs1[i] * probs2[i]
+		totalProb = probs1[i] * probs2[i] * probs3[i]
 		totalProbs.append(totalProb)
 	return totalProbs
 
@@ -155,12 +178,37 @@ def plotHeatMap(prob, allPoints):
 	pyplot.colorbar().set_label('probability of finding top analyst')
 	pyplot.show()
 
-def main():
-	#overview with whole river spree
-	viewProbHeatMaps(52.00, 53.00, 100, 12.80, 14.20, 100)
+def plotOnMap(lonAxisStart, lonAxisStop, latAxisStart, latAxisStop, prob, allPoints, vmin, vmax):
+	lat1 = latAxisStart + ((latAxisStop-latAxisStart)/2)
+	lon1 = lonAxisStart + ((lonAxisStop-lonAxisStart)/2)
+	mymap = pygmaps.maps(lat1, lon1, 12)
 
-	#focus down to bridge area
-	viewProbHeatMaps(52.20, 52.70, 100, 13.10, 13.60, 100)
+	addMapPoints(prob, allPoints, mymap, vmin, vmax)
+
+	mymap.draw('mymap.draw.html') 
+	url = 'mymap.draw.html'
+	webbrowser.open_new_tab(url) 
+
+def addMapPoints(prob, allPoints, mymap, vmin, vmax):
+	colourScale = setColourScale(vmin, vmax)
+	for i in range(0,len(allPoints)):
+		pointColour = getColor(prob[i], colourScale)
+		mymap.addpoint(allPoints[i][1], allPoints[i][0], pointColour) 
+
+def setColourScale(vmin, vmax):
+	norm = mpl.colors.Normalize(vmin, vmax)
+	cmap = cm.rainbow
+	m = cm.ScalarMappable(norm=norm, cmap=cmap)
+	return m
+
+def getColor(val, m):
+	rgb = m.to_rgba(val, 0.5)
+	hexColour = mpl.colors.rgb2hex(rgb)
+	return hexColour
+
+def main():
+	#view probability heat maps
+	viewProbHeatMaps(13.2, 13.8, 100, 52.2, 52.8, 100)
 
 if __name__ == '__main__':
 	main()
